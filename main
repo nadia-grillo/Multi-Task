@@ -1,0 +1,210 @@
+List p=16f887
+    #include<p16f887.inc>
+
+; CONFIG1
+; __config 0xFFF5
+ __CONFIG _CONFIG1, _FOSC_INTRC_CLKOUT & _WDTE_OFF & _PWRTE_OFF & _MCLRE_ON & _CP_OFF & _CPD_OFF & _BOREN_ON & _IESO_ON & _FCMEN_ON & _LVP_ON
+; CONFIG2
+; __config 0xFFFF
+ __CONFIG _CONFIG2, _BOR4V_BOR40V & _WRT_OFF
+
+
+ cblock	    0x20
+ DATO1
+ DATO2  ;21
+ DATO3   ;22
+ PUNTEROB   ;23  ;T no B
+ PUNTEROD   ;24
+ CONT1      ;25
+ CONTF      ;26
+ CONTFD     ;27
+ w_temp     ;28
+ s_temp     ;29
+ aux        ;30
+ BANDERAC    ;31
+ endc
+ 
+	    org	    0x00
+	    goto    INICIO
+	    org	    0x04
+	    goto    INTER
+	    ;---------------------------------------------------------------------
+INICIO	    clrf    DATO1	;nos aseguramos de tener todos los datos limpios
+	    clrf    DATO2	;inicializamos los valores de los punteros y contadores
+	    clrf    DATO3
+	    movlw   DATO1
+	    movwf   PUNTEROB  ;T no B
+	    movwf   PUNTEROD
+	    movlw   .4
+	    movwf   CONTF
+	    movlw   .3
+	    movwf   CONTFD
+	    bsf	    STATUS,RP0		    ;----------------------------
+	    movlw   0x07		    
+	    movwf   TRISB	    ;Inicializamos los registros para tener:
+	    movwf   IOCB	    ; PUERTO D para datos del display
+	    clrf    TRISC	    ; PUERTO B para manejar el teclado '00000111'
+	    clrf    TRISD	    ; PUERTO C para seleccionar display
+	    bsf	    STATUS,RP1
+	    clrf    ANSEL
+	    clrf    ANSELH
+	    banksel PORTA
+	    clrf    BANDERAC
+	    movlw   b'11111000'
+	    movwf   PORTB
+	    bsf	    INTCON,RBIE
+	    bcf	    INTCON,RBIF
+	    bsf	    INTCON,GIE
+	    btfss   BANDERAC,0
+	    goto    $-1
+	    goto    INICIO
+	    ;--------------------------------------------------------------
+INTER	    bcf	    STATUS,RP0
+	    bcf	    STATUS,RP1
+	    movwf   w_temp	    ;guardamos contexto
+	    swapf   STATUS,0
+	    movwf   s_temp	;------------------------------------------
+	    btfsc   INTCON,RBIF
+	    call    INTERT
+	    btfsc   INTCON,T0IF
+	    call    INTER0
+	    swapf   s_temp,0
+	    movwf   STATUS
+	    swapf   w_temp,1
+	    swapf   w_temp,0
+	    retfie
+		
+INTERT	    movlw   .12
+	    movwf   CONT1
+	    movlw   b'10000000'
+	    movwf   PORTB
+BUCLE1	    bcf	    STATUS,C
+	    rrf	    PORTB
+	    
+	    btfsc   PORTB,0
+	    goto    ENCONTRO   ;encotramos enter,9,6,3
+	    decf    CONT1,1
+	    
+	    btfsc   PORTB,1
+	    goto    ENCONTRO   ;encotramos 0,8,5,2
+	    decf    CONT1,1
+	    
+	    btfsc   PORTB,2
+	    goto    ENCONTRO   ;encotramos clr,7,4,1
+	    decfsz  CONT1,1
+	    goto    BUCLE1
+	    bcf	    INTCON,RBIF
+	    movlw   b'11111000'
+	    movwf   PORTB
+	    return
+	    ;--------------------------------------------------------------------------------
+ENCONTRO    movlw   .12		;testiamos que las teclas apretadas son ENT o CLR
+	    xorwf   CONT1,0	;como hacen otras funciones el programa se va para otro lado
+	    btfsc   STATUS,Z
+	    nop ;  goto    ACCIONAR   ;+++++++++++++++++++++++++++++++++++++++++++
+	    movlw   .10
+	    xorwf   CONT1,0
+	    btfsc   STATUS,Z
+	    goto    LIMPIAR	;+++++++++++++++++++++++++++++++++++++++++++
+	   ;------------------------------------------------------------------------- 
+	    decfsz  CONTF   ;Sino guardamos el dato siempre y cuando todavia no
+	    goto    INC	    ;hayamos guardado 3 antes.
+	    movlw   .1
+	    movwf   CONTF
+	    bcf	    INTCON,RBIF
+	    return
+INC	    movf    PUNTEROB,0	;guardamos el valor en el lugar correcto
+	    movwf   FSR		
+	    movf    CONT1,0
+	    movwf   INDF
+	    incf    PUNTEROB,1
+	    bsf	    INTCON,T0IF
+	    bcf	    INTCON,RBIF
+	    banksel PORTA
+	    movlw   b'00010000'
+	    movwf   PORTC
+	    movlw   .3
+	    movwf   CONTFD
+	    movlw   DATO1      ;-----
+	    movwf   PUNTEROD   ; punbtero d ya tiene el valor de posicion de dato1***
+	    movlw   b'11111000'
+	    movwf   PORTB
+	    movlw   0xff
+	    movwf   PORTD
+	    return
+	  ;-------------------------------------------------------------------------  
+INTER0	    bsf	    INTCON,T0IE
+	    banksel TRISA
+	    bcf	    OPTION_REG,PSA
+	    bsf	    OPTION_REG,PS0
+	    bsf	    OPTION_REG,PS1
+	    bsf	    OPTION_REG,PS2
+	    bcf	    OPTION_REG,T0CS
+	    bcf	    INTCON,T0IF
+	    banksel PORTA
+	    movlw   .231
+	    movwf   TMR0
+	    decfsz  CONTFD   ;Sino guardamos el dato siempre y cuando todavia no
+	    goto    INCD	    ;hayamos guardado 3 antes.
+	    movlw   .3
+	    movwf   CONTFD
+	    movf    PUNTEROD,0
+	    movwf   FSR
+	    movf    INDF,0
+	    call    TABLA
+	    movwf   PORTD
+	    movlw   DATO1
+	    movwf   PUNTEROD
+	    call    SELECCIONAR
+	    return
+INCD	    movf    PUNTEROD,0
+	    movwf   FSR
+	    movf    INDF,0
+	    call    TABLA
+	    movwf   PORTD
+	    call    SELECCIONAR
+	    incf    PUNTEROD,1
+	    return
+	    ;-----------------------------------------------------------------------------------------
+TABLA	    addwf   PCL,1		;Pasamos a 7seg el valor almacenado en datos LOGICA POSITIVA
+	    RETLW   0xFF			;TODAS LAS LUCES APAGADAS
+	    RETLW   0xF9  			; obtiene el valor 7 segmentos del 1 
+	    RETLW   0x24			; obtiene el valor 7 segmentos del 2 
+	    RETLW   0x30			; obtiene el valor 7 segmentos del 3 
+	    RETLW   0x19			; obtiene el valor 7 segmentos del 4 
+	    RETLW   0x12			; obtiene el valor 7 segmentos del 5
+	    RETLW   0x02			; obtiene el valor 7 segmentos del 6
+	    RETLW   0x78			; obtiene el valor 7 segmentos del 7
+	    RETLW   0x80			; obtiene el valor 7 segmentos del 8
+	    RETLW   0x18			; obtiene el valor 7 segmentos del 9
+	    RETLW   0x00
+	    RETLW   0x40			; obtiene el valor 7 segmentos del 0
+	    RETLW   0x00
+	    ;------------------------------------------------------------------------
+SELECCIONAR btfsc   PORTC,RC7	    
+	    goto    REIN
+	    bcf	    STATUS,C
+	    rlf	    PORTC,1
+	    return
+REIN	    movlw   b'00100000'
+	    movwf   PORTC
+	    return
+	    
+LIMPIAR	    bcf	    STATUS,RP0
+	    bcf	    STATUS,RP1
+	    movlw   .10
+	    movwf   aux
+	    movlw   0x20
+	    movwf   FSR
+ret	    clrf    INDF
+	    incf    FSR
+	    decfsz  aux
+	    goto    ret
+	    comf    BANDERAC
+	    movlw   0xff
+	    movwf   PORTD
+	    bcf	    INTCON,RBIF
+	    bcf	    INTCON,T0IF
+	    bcf	    INTCON,T0IE
+	    return
+	    END
